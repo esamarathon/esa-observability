@@ -1,0 +1,68 @@
+name: esa-observability
+
+services:
+  otelcol:
+    image: otel/opentelemetry-collector-contrib:0.152.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otelcol.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - '${OTEL_GRPC_PORT:-4317}:4317'   # OTLP gRPC
+      - '${OTEL_HTTP_PORT:-4318}:4318'   # OTLP HTTP
+      # - '8888:8888'                     # collector self-metrics (optional)
+    depends_on:
+      - victoriametrics
+      - victorialogs
+      - victoriatraces
+    restart: unless-stopped
+
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:latest
+    command:
+      - '-opentelemetry.usePrometheusNaming'
+      - '-retentionPeriod=3'
+    ports:
+      - '${VICTORIAMETRICS_PORT:-8428}:8428'
+    volumes:
+      - vm-data:/victoria-metrics-data
+    restart: unless-stopped
+
+  victorialogs:
+    image: victoriametrics/victoria-logs:latest
+    ports:
+      - '${VICTORIALOGS_PORT:-9428}:9428'
+    volumes:
+      - vl-data:/victoria-logs-data
+    restart: unless-stopped
+
+  victoriatraces:
+    image: victoriametrics/victoria-traces:latest
+    ports:
+      - '${VICTORIATRACES_PORT:-10428}:10428'
+    volumes:
+      - vt-data:/victoria-traces-data
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=victoriametrics-logs-datasource
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - '${GRAFANA_PORT:-3000}:3000'
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - victoriametrics
+      - victorialogs
+      - victoriatraces
+    restart: unless-stopped
+
+volumes:
+  vm-data:
+  vl-data:
+  vt-data:
+  grafana-data:
